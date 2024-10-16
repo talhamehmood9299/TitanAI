@@ -28,8 +28,8 @@ RUN pip install --upgrade pip && \
 # Copy the rest of the application code into the container
 COPY . /app/
 
-# Expose the port on which the FastAPI app will run
-EXPOSE 8080
+# Expose the new port for the FastAPI app
+EXPOSE 5000
 
-# Define the command to run the FastAPI app with Uvicorn
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8080"]
+# Define the command to run the FastAPI app with Uvicorn on the new port
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "5000"]
