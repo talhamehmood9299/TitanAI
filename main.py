@@ -1,4 +1,6 @@
 import os
+
+import httpx
 import requests
 from openai import OpenAI
 from fastapi import FastAPI, Request, HTTPException
@@ -6,6 +8,15 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from pydub import AudioSegment
 import json
+import pusher
+
+pusher_client = pusher.Pusher(
+  app_id='1835059',
+  key='f5d7f359a1682ae86bd6',
+  secret='9a0384a6d345adb01574',
+  cluster='mt1',
+  ssl=True
+)
 
 app = FastAPI()
 
@@ -19,14 +30,17 @@ app.add_middleware(
 
 client = OpenAI(api_key="")
 
+
 CLIENT_ID = os.getenv('CLIENT_ID')
 print(CLIENT_ID)
 AUTH_TOKEN = os.getenv('AUTH_TOKEN')
 print(AUTH_TOKEN)
 
 
+
 class URLRequest(BaseModel):
     url: str
+    id: str
 
 
 @app.post("/soap-notes")
@@ -40,6 +54,7 @@ async def process_audio(request: Request, url_request: URLRequest):
         raise HTTPException(status_code=403, detail="Error: Authentication failed")
 
     url = url_request.url
+    id = url_request.id
     file_path = await download_file(url)
     chunk_length = 600000
     if not file_path:
@@ -56,6 +71,7 @@ async def process_audio(request: Request, url_request: URLRequest):
     try:
         if duration <= chunk_length:
             transcription = transcribe_audio(file_path)
+            print(transcription)
             if transcription.language == "english":
                 all_segments = transcription.segments
                 text = transcription.text
@@ -70,7 +86,6 @@ async def process_audio(request: Request, url_request: URLRequest):
                 transcription = transcribe_audio(chunk_name)
                 if transcription.language == "english":
                     for segment in transcription.segments:
-                        # Use attribute access instead of subscript
                         segment.start += last_end
                         segment.end += last_end
                         keys_to_exclude = {"id", "seek", "tokens", "temperature", "avg_logprob", "compression_ratio",
@@ -93,8 +108,7 @@ async def process_audio(request: Request, url_request: URLRequest):
         cpt_codes = data["cpt_codes"]
         modifiers = data["modifiers"]
         tags = data["tags"]
-        return {"soap_note": soap_note, "tags": tags, 'cpt_codes': cpt_codes,
-                'modifiers': modifiers, "transcription": all_segments}
+        await send_soap_note(id, soap_note, tags, cpt_codes, modifiers, all_segments)
     except Exception as e:
         print(f"Error processing: {str(e)}")
         raise HTTPException(status_code=500, detail="Error processing request")
@@ -111,9 +125,43 @@ async def download_file(url: str, tmp_folder: str = "tmp", file_name: str = "aud
         print(f"File downloaded and saved to {file_path}")
         return file_path
     except requests.exceptions.RequestException as e:
-        print(f"Failed to download file: {e}")
-        return None
+        print(f"Error in download_file: {e}")
+        raise HTTPException(status_code=500, detail="Error downloading file")
 
+
+
+async def send_soap_note(id, soap_note, tags, cpt_codes, modifiers, all_segments):
+    try:
+        url = 'http://127.0.0.1:8000/api/v2/add-soapnotes'
+        data = {
+            "id": id,
+            "soap_note": str(soap_note),
+            "tags": str(tags),
+            "cpt_codes": str(cpt_codes),
+            "modifiers": str(modifiers),
+            "transcription": str(all_segments)
+        }
+
+        headers = {
+            'client_id': CLIENT_ID,
+            'auth_token': AUTH_TOKEN
+        }
+        async with httpx.AsyncClient() as client:
+            response = await client.post(url, json=data, headers=headers)
+        if response.status_code == 200:
+            response_data = response.json()
+        else:
+            response_data = {
+                "error": "Failed to send SOAP note",
+                "status": response.status_code,
+                "message": response.text
+            }
+        pusher_client.trigger('soap-note-channel', 'soap-note-event', response_data)
+        print(response_data)
+        return response_data
+    except Exception as e:
+        print(f"Error in send_soap_note: {str(e)}")
+        raise HTTPException(status_code=500, detail="Error sending SOAP note")
 
 def transcribe_audio(file_path: str):
     try:
@@ -126,7 +174,7 @@ def transcribe_audio(file_path: str):
             )
         return transcription
     except Exception as e:
-        print(f"Transcription error: {e}")
+        raise HTTPException(status_code=500, detail="Error during transcribing")
 
 
 def translate_audio(file_path: str):
@@ -140,7 +188,7 @@ def translate_audio(file_path: str):
         return transcription.text
     except Exception as e:
         print(f"Transcription error: {e}")
-        raise HTTPException(status_code=500, detail="Error during transcription")
+        raise HTTPException(status_code=500, detail="Error during translation")
 
 
 def generate_soap_notes(transcription_text: str):
