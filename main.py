@@ -132,7 +132,7 @@ async def download_file(url: str, tmp_folder: str = "tmp", file_name: str = "aud
 
 async def send_soap_note(id, soap_note, tags, cpt_codes, modifiers, all_segments):
     try:
-        url = 'http://127.0.0.1:8000/api/v2/add-soapnotes'
+        url = 'https://azzportal.com/admin/public/api/v2/add-soapnotes'
         data = {
             "id": id,
             "soap_note": str(soap_note),
