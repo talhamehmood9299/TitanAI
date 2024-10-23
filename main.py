@@ -11,11 +11,11 @@ import json
 import pusher
 
 pusher_client = pusher.Pusher(
-  app_id='1835059',
-  key='f5d7f359a1682ae86bd6',
-  secret='9a0384a6d345adb01574',
-  cluster='mt1',
-  ssl=True
+    app_id='1835059',
+    key='f5d7f359a1682ae86bd6',
+    secret='9a0384a6d345adb01574',
+    cluster='mt1',
+    ssl=True
 )
 
 app = FastAPI()
@@ -28,14 +28,13 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-client = OpenAI(api_key="")
-
+client = OpenAI(
+    api_key="")
 
 CLIENT_ID = os.getenv('CLIENT_ID')
 print(CLIENT_ID)
 AUTH_TOKEN = os.getenv('AUTH_TOKEN')
 print(AUTH_TOKEN)
-
 
 
 class URLRequest(BaseModel):
@@ -108,7 +107,9 @@ async def process_audio(request: Request, url_request: URLRequest):
         cpt_codes = data["cpt_codes"]
         modifiers = data["modifiers"]
         tags = data["tags"]
-        await send_soap_note(id, soap_note, tags, cpt_codes, modifiers, all_segments)
+        icd_10_codes = data["icd_10_codes"]
+
+        await send_soap_note(id, soap_note, tags, cpt_codes, modifiers, all_segments, icd_10_codes)
     except Exception as e:
         print(f"Error processing: {str(e)}")
         raise HTTPException(status_code=500, detail="Error processing request")
@@ -129,8 +130,7 @@ async def download_file(url: str, tmp_folder: str = "tmp", file_name: str = "aud
         raise HTTPException(status_code=500, detail="Error downloading file")
 
 
-
-async def send_soap_note(id, soap_note, tags, cpt_codes, modifiers, all_segments):
+async def send_soap_note(id, soap_note, tags, cpt_codes, modifiers, all_segments, icd_10_codes):
     try:
         url = 'https://azzportal.com/admin/public/api/v2/add-soapnotes'
         data = {
@@ -139,7 +139,8 @@ async def send_soap_note(id, soap_note, tags, cpt_codes, modifiers, all_segments
             "tags": str(tags),
             "cpt_codes": str(cpt_codes),
             "modifiers": str(modifiers),
-            "transcription": str(all_segments)
+            "transcription": all_segments,
+            "icd_10_codes": icd_10_codes
         }
 
         headers = {
@@ -162,6 +163,7 @@ async def send_soap_note(id, soap_note, tags, cpt_codes, modifiers, all_segments
     except Exception as e:
         print(f"Error in send_soap_note: {str(e)}")
         raise HTTPException(status_code=500, detail="Error sending SOAP note")
+
 
 def transcribe_audio(file_path: str):
     try:
@@ -240,9 +242,17 @@ def generate_soap_notes(transcription_text: str):
                                 "items": {
                                     "type": "string"
                                 }
+                            },
+                            "icd_10_codes": {
+                                "description": "List of ICD-10 codes related to the diseases or disorders mentioned "
+                                               "in the transcript.",
+                                "type": "array",
+                                "items": {
+                                    "type": "string"
+                                }
                             }
                         },
-                        "required": ["soap_note", "cpt_codes", "modifiers"],
+                        "required": ["soap_note", "cpt_codes", "modifiers", "icd_10_codes"],
                         "additionalProperties": False
                     }
                 }
