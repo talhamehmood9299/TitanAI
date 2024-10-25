@@ -37,7 +37,6 @@ AUTH_TOKEN = os.getenv('AUTH_TOKEN')
 print(AUTH_TOKEN)
 
 
-
 class URLRequest(BaseModel):
     url: str
     id: str
@@ -110,7 +109,7 @@ async def process_audio(request: Request, url_request: URLRequest):
         tags = data["tags"]
         icd_10_codes = data["icd_10_codes"]
 
-        valid_transcription = valid_json(str(all_segments))
+        valid_transcription = await valid_json(str(all_segments))
 
         await send_soap_note(id, soap_note, tags, cpt_codes, modifiers, valid_transcription, icd_10_codes)
     except Exception as e:
