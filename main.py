@@ -7,8 +7,8 @@ from fastapi import FastAPI, Request, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from pydub import AudioSegment
-import json
 import pusher
+import json
 
 pusher_client = pusher.Pusher(
     app_id='1835059',
@@ -35,6 +35,7 @@ CLIENT_ID = os.getenv('CLIENT_ID')
 print(CLIENT_ID)
 AUTH_TOKEN = os.getenv('AUTH_TOKEN')
 print(AUTH_TOKEN)
+
 
 
 class URLRequest(BaseModel):
@@ -109,10 +110,23 @@ async def process_audio(request: Request, url_request: URLRequest):
         tags = data["tags"]
         icd_10_codes = data["icd_10_codes"]
 
-        await send_soap_note(id, soap_note, tags, cpt_codes, modifiers, all_segments, icd_10_codes)
+        valid_transcription = valid_json(str(all_segments))
+
+        await send_soap_note(id, soap_note, tags, cpt_codes, modifiers, valid_transcription, icd_10_codes)
     except Exception as e:
         print(f"Error processing: {str(e)}")
         raise HTTPException(status_code=500, detail="Error processing request")
+
+
+async def valid_json(transcription):
+    try:
+        json_string = transcription.replace("'", '"')
+        valid_transcription = json_string.replace("\\", "")
+        print(valid_transcription)
+        return valid_transcription
+    except requests.exceptions.RequestException as e:
+        print(f"Error in validating transcription: {e}")
+        raise HTTPException(status_code=500, detail="Error validation transcription")
 
 
 async def download_file(url: str, tmp_folder: str = "tmp", file_name: str = "audio_file.mp3"):
@@ -130,7 +144,7 @@ async def download_file(url: str, tmp_folder: str = "tmp", file_name: str = "aud
         raise HTTPException(status_code=500, detail="Error downloading file")
 
 
-async def send_soap_note(id, soap_note, tags, cpt_codes, modifiers, all_segments, icd_10_codes):
+async def send_soap_note(id, soap_note, tags, cpt_codes, modifiers, valid_transcription, icd_10_codes):
     try:
         url = 'https://azzportal.com/admin/public/api/v2/add-soapnotes'
         data = {
@@ -139,7 +153,7 @@ async def send_soap_note(id, soap_note, tags, cpt_codes, modifiers, all_segments
             "tags": str(tags),
             "cpt_codes": str(cpt_codes),
             "modifiers": str(modifiers),
-            "transcription": all_segments,
+            "transcription": valid_transcription,
             "icd_10_codes": icd_10_codes
         }
 
