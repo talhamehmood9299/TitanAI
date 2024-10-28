@@ -9,6 +9,7 @@ from pydantic import BaseModel
 from pydub import AudioSegment
 import pusher
 import json
+import re
 
 pusher_client = pusher.Pusher(
     app_id='1835059',
@@ -29,7 +30,8 @@ app.add_middleware(
 )
 
 client = OpenAI(
-    api_key="")
+    api_key=""
+)
 
 CLIENT_ID = os.getenv('CLIENT_ID')
 print(CLIENT_ID)
@@ -109,7 +111,7 @@ async def process_audio(request: Request, url_request: URLRequest):
         tags = data["tags"]
         icd_10_codes = data["icd_10_codes"]
 
-        valid_transcription = await valid_json(str(all_segments))
+        valid_transcription = valid_json(str(all_segments))
 
         await send_soap_note(id, soap_note, tags, cpt_codes, modifiers, valid_transcription, icd_10_codes)
     except Exception as e:
@@ -117,15 +119,25 @@ async def process_audio(request: Request, url_request: URLRequest):
         raise HTTPException(status_code=500, detail="Error processing request")
 
 
-async def valid_json(transcription):
+def valid_json(json_str):
     try:
-        json_string = transcription.replace("'", '"')
-        valid_transcription = json_string.replace("\\", "")
-        print(valid_transcription)
-        return valid_transcription
-    except requests.exceptions.RequestException as e:
-        print(f"Error in validating transcription: {e}")
-        raise HTTPException(status_code=500, detail="Error validation transcription")
+        # Step 1: Replace single quotes around keys
+        formatted_str = re.sub(r"(?<=\{|\s|,)'([^']+)':", r'"\1":', json_str)
+
+        # Step 2: Replace single quotes around values (excluding 'text' fields)
+        formatted_str = re.sub(
+            r'(?<!text):\s\'([^\']*)\'(?!\s*[,\}])', r': "\1"', formatted_str
+        )
+
+        # Step 3: Ensure 'text' values are enclosed in double quotes if they aren’t already
+        # This pattern specifically looks for 'text' field values and ensures double quotes
+        formatted_str = re.sub(
+            r'"text":\s*\'([^\']*)\'', r'"text": "\1"', formatted_str
+        )
+        return formatted_str
+    except json.JSONDecodeError as e:
+        print(f"JSON decoding error: {e}")
+        return None
 
 
 async def download_file(url: str, tmp_folder: str = "tmp", file_name: str = "audio_file.mp3"):
