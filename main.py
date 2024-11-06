@@ -248,17 +248,39 @@ def generate_soap_notes(transcription_text: str):
                                 "type": "string"
                             },
                             "cpt_codes": {
-                                "description": "List of CPT codes related to the services mentioned in the transcript.",
+                                "description": "List of CPT codes related to the services mentioned in the transcript, along with reasons.",
                                 "type": "array",
                                 "items": {
-                                    "type": "string"
+                                    "type": "object",
+                                    "properties": {
+                                        "code": {
+                                            "type": "string",
+                                            "description": "CPT code."
+                                        },
+                                        "reason": {
+                                            "type": "string",
+                                            "description": "Reason for the CPT code."
+                                        }
+                                    },
+                                    "required": ["code", "reason"]
                                 }
                             },
                             "modifiers": {
-                                "description": "List of modifiers related to the services mentioned in the transcript.",
+                                "description": "List of modifiers related to the services mentioned in the transcript, along with reasons.",
                                 "type": "array",
                                 "items": {
-                                    "type": "string"
+                                    "type": "object",
+                                    "properties": {
+                                        "modifier": {
+                                            "type": "string",
+                                            "description": "Modifier code."
+                                        },
+                                        "reason": {
+                                            "type": "string",
+                                            "description": "Reason for the modifier."
+                                        }
+                                    },
+                                    "required": ["modifier", "reason"]
                                 }
                             },
                             "tags": {
@@ -269,11 +291,21 @@ def generate_soap_notes(transcription_text: str):
                                 }
                             },
                             "icd_10_codes": {
-                                "description": "List of ICD-10 codes related to the diseases or disorders mentioned "
-                                               "in the transcript.",
+                                "description": "List of ICD-10 codes related to the diseases or disorders mentioned in the transcript, with their names.",
                                 "type": "array",
                                 "items": {
-                                    "type": "string"
+                                    "type": "object",
+                                    "properties": {
+                                        "code": {
+                                            "type": "string",
+                                            "description": "ICD-10 code."
+                                        },
+                                        "name": {
+                                            "type": "string",
+                                            "description": "Name of the disease or disorder for the ICD-10 code."
+                                        }
+                                    },
+                                    "required": ["code", "name"]
                                 }
                             }
                         },
