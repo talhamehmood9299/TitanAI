@@ -69,12 +69,19 @@ async def process_audio(request: Request, url_request: URLRequest):
     text = ""
     all_segments = []
     last_end = 0
+
+    # Define a function to filter and format segments consistently
+    def filter_segment(segment):
+        keys_to_exclude = {"id", "seek", "tokens", "temperature", "avg_logprob", "compression_ratio", "no_speech_prob"}
+        return {k: getattr(segment, k) for k in segment.__dict__ if k not in keys_to_exclude}
+
     try:
         if duration <= chunk_length:
             transcription = transcribe_audio(file_path)
             print(transcription)
             if transcription.language == "english":
-                all_segments = transcription.segments
+                # Filter segments and add to all_segments
+                all_segments = [filter_segment(segment) for segment in transcription.segments]
                 text = transcription.text
             else:
                 text = translate_audio(file_path)
@@ -87,13 +94,10 @@ async def process_audio(request: Request, url_request: URLRequest):
                 transcription = transcribe_audio(chunk_name)
                 if transcription.language == "english":
                     for segment in transcription.segments:
+                        # Adjust timestamps and filter segment
                         segment.start += last_end
                         segment.end += last_end
-                        keys_to_exclude = {"id", "seek", "tokens", "temperature", "avg_logprob", "compression_ratio",
-                                           "no_speech_prob"}
-                        filtered_segment = {k: getattr(segment, k) for k in segment.__dict__ if
-                                            k not in keys_to_exclude}
-                        all_segments.append(filtered_segment)
+                        all_segments.append(filter_segment(segment))
                     if transcription.segments:
                         last_end = transcription.segments[-1].end
 
@@ -117,6 +121,7 @@ async def process_audio(request: Request, url_request: URLRequest):
     except Exception as e:
         print(f"Error processing: {str(e)}")
         raise HTTPException(status_code=500, detail="Error processing request")
+
 
 
 def valid_json(json_str):
