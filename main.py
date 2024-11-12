@@ -44,11 +44,18 @@ class URLRequest(BaseModel):
     id: str
 
 
+from fastapi import HTTPException, Request
+import json
+import os
+from pydub import AudioSegment
+
+
 @app.post("/soap-notes")
 async def process_audio(request: Request, url_request: URLRequest):
     client_id = request.headers.get('client_id')
     auth_token = request.headers.get('auth_token')
 
+    # Step 1: Validate headers
     if not client_id or not auth_token:
         raise HTTPException(status_code=401, detail="Error: Client ID or Authorization token is missing")
     if client_id != CLIENT_ID or auth_token != AUTH_TOKEN:
@@ -58,53 +65,56 @@ async def process_audio(request: Request, url_request: URLRequest):
     id = url_request.id
     file_path = await download_file(url)
     chunk_length = 600000
+
+    # Step 2: Check if the file was downloaded successfully
     if not file_path:
         raise HTTPException(status_code=400, detail="Error: File download failed")
+
     try:
         audio = AudioSegment.from_file(file_path)
-    except Exception:
+    except Exception as e:
+        print(f"Error loading audio file: {e}")
         raise HTTPException(status_code=400, detail="Error loading audio file")
+
     duration = len(audio)
-    print(duration)
+    print(f"Audio duration: {duration} ms")
     text = ""
     all_segments = []
     last_end = 0
 
+    # Function to filter and format segments consistently
     def filter_segment(segment):
         keys_to_exclude = {"id", "seek", "tokens", "temperature", "avg_logprob", "compression_ratio", "no_speech_prob"}
         return {k: getattr(segment, k) for k in segment.__dict__ if k not in keys_to_exclude}
 
     try:
+        # Step 3: Transcription and translation
         if duration <= chunk_length:
             transcription = transcribe_audio(file_path)
-            print(transcription)
-            # Translate if not in English
-            if transcription.language != "english":
-                text = translate_audio(file_path)
-            else:
-                text = transcription.text
-                all_segments = [filter_segment(segment) for segment in transcription.segments]
-
+            all_segments = [filter_segment(segment) for segment in transcription.segments]
+            text = transcription.text if transcription.language == "english" else translate_audio(file_path)
         else:
             for start in range(0, duration, chunk_length):
                 chunk = audio[start:start + chunk_length]
                 chunk_name = f"temp_chunk_{start // chunk_length}.mp3"
                 chunk.export(chunk_name, format="mp3")
-                transcription = transcribe_audio(chunk_name)
 
-                # Check if the chunk needs translation
-                if transcription.language != "english":
-                    text += translate_audio(chunk_name) + " "
-                else:
-                    for segment in transcription.segments:
-                        segment.start += last_end
-                        segment.end += last_end
-                        all_segments.append(filter_segment(segment))
-                    if transcription.segments:
-                        last_end = transcription.segments[-1].end
-                    text += transcription.text + " "
+                # Process each chunk
+                transcription = transcribe_audio(chunk_name)
+                for segment in transcription.segments:
+                    segment.start += last_end
+                    segment.end += last_end
+                    all_segments.append(filter_segment(segment))
+
+                if transcription.segments:
+                    last_end = transcription.segments[-1].end
+
+                # Append transcribed text and remove temporary file
+                text += transcription.text + " " if transcription.language == "english" else translate_audio(
+                    chunk_name) + " "
                 os.remove(chunk_name)
 
+        # Step 4: Generate SOAP notes and parse response data
         response = generate_soap_notes(text)
         data = json.loads(response)
 
@@ -114,13 +124,16 @@ async def process_audio(request: Request, url_request: URLRequest):
         tags = data["tags"]
         icd_10_codes = data["icd_10_codes"]
 
+        # Step 5: Validate transcription JSON and send SOAP note
         valid_transcription = valid_json(str(all_segments))
-
         await send_soap_note(id, soap_note, tags, cpt_codes, modifiers, valid_transcription, icd_10_codes)
     except Exception as e:
         print(f"Error processing: {str(e)}")
         raise HTTPException(status_code=500, detail="Error processing request")
-
+    finally:
+        # Ensure cleanup of the downloaded file
+        if os.path.exists(file_path):
+            os.remove(file_path)
 
 
 def valid_json(json_str):
