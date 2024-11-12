@@ -70,7 +70,6 @@ async def process_audio(request: Request, url_request: URLRequest):
     all_segments = []
     last_end = 0
 
-    # Define a function to filter and format segments consistently
     def filter_segment(segment):
         keys_to_exclude = {"id", "seek", "tokens", "temperature", "avg_logprob", "compression_ratio", "no_speech_prob"}
         return {k: getattr(segment, k) for k in segment.__dict__ if k not in keys_to_exclude}
@@ -79,12 +78,12 @@ async def process_audio(request: Request, url_request: URLRequest):
         if duration <= chunk_length:
             transcription = transcribe_audio(file_path)
             print(transcription)
-            if transcription.language == "english":
-                # Filter segments and add to all_segments
-                all_segments = [filter_segment(segment) for segment in transcription.segments]
-                text = transcription.text
-            else:
+            # Translate if not in English
+            if transcription.language != "english":
                 text = translate_audio(file_path)
+            else:
+                text = transcription.text
+                all_segments = [filter_segment(segment) for segment in transcription.segments]
 
         else:
             for start in range(0, duration, chunk_length):
@@ -92,18 +91,18 @@ async def process_audio(request: Request, url_request: URLRequest):
                 chunk_name = f"temp_chunk_{start // chunk_length}.mp3"
                 chunk.export(chunk_name, format="mp3")
                 transcription = transcribe_audio(chunk_name)
-                if transcription.language == "english":
+
+                # Check if the chunk needs translation
+                if transcription.language != "english":
+                    text += translate_audio(chunk_name) + " "
+                else:
                     for segment in transcription.segments:
-                        # Adjust timestamps and filter segment
                         segment.start += last_end
                         segment.end += last_end
                         all_segments.append(filter_segment(segment))
                     if transcription.segments:
                         last_end = transcription.segments[-1].end
-
                     text += transcription.text + " "
-                else:
-                    text += translate_audio(chunk_name) + " "
                 os.remove(chunk_name)
 
         response = generate_soap_notes(text)
